@@ -21,6 +21,13 @@ async function getIpLocation(ip) {
     }
 }
 
+// 禁止 IP 地址列表
+const restrictedIps = ['::ffff:123.156.144.90'];
+
+// 检查 IP 地址是否被限制
+function isRestrictedIp(ip) {
+    return restrictedIps.includes(ip);
+}
 
 // 获取所有工单，带分页、筛选和排序功能
 router.get('/', async (req, res) => {
@@ -87,6 +94,11 @@ router.post('/', async (req, res) => {
     const { title, description, category, subCategory, coordinates, createdAt } = req.body;
     const userIp = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress || '未知'; // 获取用户的IP地址
 
+    // 检查IP是否被限制
+    if (isRestrictedIp(userIp)) {
+        return res.status(403).json({ message: '禁止访问' });
+    }
+
     try {
         const ipLocation = await getIpLocation(userIp); // 在创建时获取IP属地
 
@@ -133,6 +145,11 @@ router.post('/:id/replies', getTicket, async (req, res) => {
     const timestamp = new Date();
     const userIp = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress || '未知'; // 获取用户的IP地址
 
+    // 检查IP是否被限制
+    if (isRestrictedIp(userIp)) {
+        return res.status(403).json({ message: '禁止访问' });
+    }
+
     const sanitizedReply = sanitizeHtml(reply);
 
     // 获取回复的IP属地信息
@@ -147,10 +164,6 @@ router.post('/:id/replies', getTicket, async (req, res) => {
         res.status(400).json({ message: err.message });
     }
 });
-
-module.exports = router;
-
-
 
 // 删除回复
 router.delete('/:id/replies/:replyId', getTicket, async (req, res) => {
@@ -208,7 +221,10 @@ async function getTicket(req, res, next) {
         // 如果IP属地是"未知"，尝试获取并更新数据库
         if (ticket.ipLocation === '未知') {
             const ipLocation = await getIpLocation(ticket.userIp);
-            if (ipLocation !== '未知') {
+            if (ipLocation === '未知') {
+                ticket.ipLocation = '无'; // 如果仍然为"未知"，则将属地改为"无"
+                await ticket.save(); // 保存更新后的IP属地信息
+            } else {
                 ticket.ipLocation = ipLocation;
                 await ticket.save(); // 保存更新后的IP属地信息
             }
